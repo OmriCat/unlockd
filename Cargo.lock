@@ -560,16 +560,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "logind-zbus"
-version = "3.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f2cfc54565c8d002ad7344ec08ce512c269b2de56dea59850708691e4b18fe3"
-dependencies = [
- "serde",
- "zbus",
-]
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1023,7 +1013,7 @@ dependencies = [
  "color-eyre",
  "duct",
  "log",
- "logind-zbus",
+ "zbus",
 ]
 
 [[package]]
