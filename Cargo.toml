@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-argh = "0.1.10"
+clap = { version = "4.2.1", features = ["derive", "cargo", "env"] }
 color-eyre = { version = "0.6.2", default-features = false }
 duct = "0.13.6"
-log = "0.4.17"
-zbus = { version = "3.11.1" }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"]}
+zbus = { version = "3.11.1", features = ["tokio"] }
