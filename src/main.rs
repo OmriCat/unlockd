@@ -5,16 +5,24 @@ use clap::builder::NonEmptyStringValueParser;
 use clap::Parser;
 use color_eyre::eyre;
 use tracing::metadata::LevelFilter;
-use tracing::{debug, debug_span};
+use tracing::{debug, debug_span, info};
+use tracing_error::ErrorLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer};
 
 fn main() -> eyre::Result<()> {
+    color_eyre::install()?;
+
     let tracing_subscriber = initialize_tracing_subscriber();
-    tracing::subscriber::set_global_default(tracing_subscriber)?;
+    tracing::subscriber::set_global_default(tracing_subscriber)
+        .expect("Can't install the tracing subscriber");
+
+    ctrlc::set_handler(|| {
+        info!("Received SIGINT or SIGTERM, exiting");
+        std::process::exit(0)
+    })?;
 
     let _main = debug_span!("main").entered();
-    color_eyre::install()?;
 
     let options = Options::parse();
     debug!(options = ?options);
@@ -33,6 +41,7 @@ fn initialize_tracing_subscriber() -> impl tracing::Subscriber {
     tracing_subscriber::registry()
         .with(filtered_fmt)
         .with(journald)
+        .with(ErrorLayer::default())
 }
 
 #[derive(Parser, Debug)]
