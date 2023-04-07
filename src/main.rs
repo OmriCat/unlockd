@@ -4,8 +4,10 @@ use crate::session::SessionInterface;
 use clap::builder::NonEmptyStringValueParser;
 use clap::Parser;
 use color_eyre::eyre;
+use tracing::metadata::LevelFilter;
 use tracing::{debug, debug_span};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{EnvFilter, Layer};
 
 fn main() -> eyre::Result<()> {
     let tracing_subscriber = initialize_tracing_subscriber();
@@ -24,10 +26,14 @@ fn main() -> eyre::Result<()> {
 }
 
 fn initialize_tracing_subscriber() -> impl tracing::Subscriber {
-    tracing_subscriber::fmt()
-        // .pretty()
-        .with_env_filter(EnvFilter::from_default_env())
-        .finish()
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filtered_fmt = tracing_subscriber::fmt::layer().with_filter(env_filter);
+    let journald = tracing_journald::layer()
+        .ok()
+        .with_filter(LevelFilter::DEBUG);
+    tracing_subscriber::registry()
+        .with(filtered_fmt)
+        .with(journald)
 }
 
 #[derive(Parser, Debug)]
