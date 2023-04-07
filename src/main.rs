@@ -19,8 +19,7 @@ fn main() -> eyre::Result<()> {
     let options = Options::parse();
     debug!(options = ?options);
 
-    let connection = SessionInterface::system_bus_connection()?;
-    let session = SessionInterface::new(&connection, options.session_id.parse()?)?;
+    let session = SessionInterface::new(options.session_id.parse()?)?;
 
     session.blocking_subscribe_to_locked_hint()
 }

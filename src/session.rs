@@ -3,7 +3,7 @@ use color_eyre::eyre::WrapErr;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 use zbus::blocking::Connection;
 use zbus::dbus_proxy;
 
@@ -27,32 +27,34 @@ pub(crate) struct SessionInterface<'a> {
 }
 
 impl<'a> SessionInterface<'a> {
-    #[instrument(
-        skip(connection),
-        fields(
+    #[instrument]
+    pub fn new(session_id: SessionId) -> eyre::Result<Self> {
+        let session_path = format!("/org/freedesktop/login1/session/{}", session_id);
+        let connection =
+            Connection::system().wrap_err_with(|| "Failed to connect to system bus")?;
+        debug!(
             connection.guid = connection.inner().server_guid(),
             connection.unique_name = connection
                 .inner()
                 .unique_name()
                 .map(|un| un.as_str())
-                .unwrap_or_else(|| "No unique name")
-        )
-    )]
-    pub fn new(connection: &'a Connection, session_id: SessionId) -> eyre::Result<Self> {
-        let session_path = format!("/org/freedesktop/login1/session/{}", session_id);
+                .unwrap_or_else(|| "No unique name"),
+        );
         let session: SessionProxyBlocking = SessionProxyBlocking::builder(&connection)
             .path(session_path)?
             .build()?;
         Ok(SessionInterface { proxy: session })
     }
 
-    pub fn system_bus_connection() -> eyre::Result<Connection> {
-        Connection::system().wrap_err_with(|| "Failed to connect to system bus")
-    }
-
     #[instrument(
         skip(self),
         fields(
+            connection.guid = self.proxy.connection().inner().server_guid(),
+            connection.unique_name = self.proxy.connection()
+                .inner()
+                .unique_name()
+                .map(|un| un.as_str())
+                .unwrap_or_else(|| "No unique name"),
             session.destination = self.proxy.destination().as_str(),
             session.path = self.proxy.path().as_str(),
             session.interface = self.proxy.interface().as_str())
@@ -74,11 +76,6 @@ impl<'a> SessionInterface<'a> {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub struct SessionId {
-    session_id: String,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub enum SessionIdParseError {
     NonEmptyString,
 }
@@ -90,6 +87,11 @@ impl Display for SessionIdParseError {
 }
 
 impl Error for SessionIdParseError {}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct SessionId {
+    session_id: String,
+}
 
 impl FromStr for SessionId {
     type Err = SessionIdParseError;
