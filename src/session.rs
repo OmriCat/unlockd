@@ -1,9 +1,10 @@
 use color_eyre::eyre;
-use color_eyre::eyre::WrapErr;
+use color_eyre::eyre::{eyre, WrapErr};
+use duct::{Expression, Handle};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 use zbus::blocking::Connection;
 use zbus::dbus_proxy;
 
@@ -24,11 +25,12 @@ trait Session {
 #[derive(Debug)]
 pub(crate) struct SessionInterface<'a> {
     proxy: SessionProxyBlocking<'a>,
+    unlock_cmd: Expression,
 }
 
 impl<'a> SessionInterface<'a> {
-    #[instrument]
-    pub fn new(session_id: SessionId) -> eyre::Result<Self> {
+    #[instrument(skip(unlock_cmd))]
+    pub fn new<T: Into<Expression>>(session_id: SessionId, unlock_cmd: T) -> eyre::Result<Self> {
         let session_path = format!("/org/freedesktop/login1/session/{}", session_id);
         let connection =
             Connection::system().wrap_err_with(|| "Failed to connect to system bus")?;
@@ -43,7 +45,10 @@ impl<'a> SessionInterface<'a> {
         let session: SessionProxyBlocking = SessionProxyBlocking::builder(&connection)
             .path(session_path)?
             .build()?;
-        Ok(SessionInterface { proxy: session })
+        Ok(SessionInterface {
+            proxy: session,
+            unlock_cmd: unlock_cmd.into().unchecked(),
+        })
     }
 
     #[instrument(
@@ -66,12 +71,41 @@ impl<'a> SessionInterface<'a> {
 
         info!("Subscribing to LockedHint changes");
 
+        let mut handle: Option<Handle> = None;
+
         while let Some(locked) = self.proxy.receive_locked_hint_changed().next() {
             if self.proxy.active()? {
-                info!(locked_hint = locked.get()?)
+                let locked_hint = locked.get()?;
+                info!(locked_hint = locked_hint);
+                if !locked_hint {
+                    handle = Self::run_cmd(&self.unlock_cmd)?.into();
+                } else if let Some(h) = &handle {
+                    Self::handle_prev_output(&self.unlock_cmd, h)
+                }
             }
         }
         Ok(())
+    }
+
+    #[instrument]
+    fn handle_prev_output(unlock_cmd: &Expression, h: &Handle) -> () {
+        match h.try_wait() {
+            Ok(None) => {
+                warn!("Child process not completed, killing");
+                h.kill().unwrap_or_else(
+                    |e| error!(kill.error = ?e, "Error killing child process, ignoring"),
+                )
+            }
+            Ok(Some(output)) => info!(child.output = ?output, "Output of previous run"),
+            Err(e) => warn!(child.error = ?e),
+        }
+    }
+
+    #[instrument]
+    fn run_cmd(unlock_cmd: &Expression) -> eyre::Result<Handle> {
+        unlock_cmd
+            .start()
+            .wrap_err_with(|| eyre!("Error starting command {:?}", unlock_cmd))
     }
 }
 

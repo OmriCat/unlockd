@@ -4,6 +4,7 @@ use crate::session::SessionInterface;
 use clap::builder::NonEmptyStringValueParser;
 use clap::Parser;
 use color_eyre::eyre;
+use duct::cmd;
 use tracing::metadata::LevelFilter;
 use tracing::{debug, debug_span, info};
 use tracing_error::ErrorLayer;
@@ -27,7 +28,7 @@ fn main() -> eyre::Result<()> {
     let options = Options::parse();
     debug!(options = ?options);
 
-    let session = SessionInterface::new(options.session_id.parse()?)?;
+    let session = SessionInterface::new(options.session_id.parse()?, cmd!("at-unlock"))?;
 
     session.blocking_subscribe_to_locked_hint()
 }
