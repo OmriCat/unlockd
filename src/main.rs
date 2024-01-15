@@ -1,15 +1,20 @@
+mod manager;
 mod session;
+mod session_id;
 
+use crate::manager::session_path_from_id;
 use crate::session::SessionInterface;
+use crate::session_id::SessionId;
 use clap::builder::NonEmptyStringValueParser;
 use clap::Parser;
-use color_eyre::eyre;
+use color_eyre::eyre::{self, Context};
 use duct::cmd;
 use tracing::metadata::LevelFilter;
 use tracing::{debug, debug_span, info};
 use tracing_error::ErrorLayer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::{EnvFilter, Layer};
+use zbus::blocking::Connection;
 
 fn main() -> eyre::Result<()> {
     color_eyre::install()?;
@@ -28,7 +33,13 @@ fn main() -> eyre::Result<()> {
     let options = Options::parse();
     debug!(options = ?options);
 
-    let session = SessionInterface::new(options.session_id.parse()?, cmd!("at-unlock"))?;
+    let session_id: SessionId = options.session_id.parse()?;
+
+    let connection = Connection::system().wrap_err_with(|| "Failed to connect to system bus")?;
+
+    let session_path = session_path_from_id(&connection, session_id)?;
+
+    let session = SessionInterface::new(&connection, &session_path, cmd!("at-unlock"))?;
 
     session.blocking_subscribe_to_locked_hint()
 }
@@ -44,6 +55,8 @@ fn initialize_tracing_subscriber() -> impl tracing::Subscriber {
         .with(journald)
         .with(ErrorLayer::default())
 }
+
+
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]

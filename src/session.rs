@@ -1,12 +1,10 @@
 use color_eyre::eyre;
 use color_eyre::eyre::{eyre, WrapErr};
 use duct::{Expression, Handle};
-use std::error::Error;
-use std::fmt::{Display, Formatter};
-use std::str::FromStr;
 use tracing::{debug, error, info, instrument, warn};
 use zbus::blocking::Connection;
 use zbus::dbus_proxy;
+use zbus::zvariant::ObjectPath;
 
 #[dbus_proxy(
     interface = "org.freedesktop.login1.Session",
@@ -30,10 +28,7 @@ pub(crate) struct SessionInterface<'a> {
 
 impl<'a> SessionInterface<'a> {
     #[instrument(skip(unlock_cmd))]
-    pub fn new<T: Into<Expression>>(session_id: SessionId, unlock_cmd: T) -> eyre::Result<Self> {
-        let session_path = format!("/org/freedesktop/login1/session/{}", session_id);
-        let connection =
-            Connection::system().wrap_err_with(|| "Failed to connect to system bus")?;
+    pub fn new<T: Into<Expression>>(connection: &Connection, session_obj_path: &ObjectPath, unlock_cmd: T) -> eyre::Result<Self> {
         debug!(
             connection.guid = connection.inner().server_guid(),
             connection.unique_name = connection
@@ -42,8 +37,8 @@ impl<'a> SessionInterface<'a> {
                 .map(|un| un.as_str())
                 .unwrap_or_else(|| "No unique name"),
         );
-        let session: SessionProxyBlocking = SessionProxyBlocking::builder(&connection)
-            .path(session_path)?
+        let session: SessionProxyBlocking = SessionProxyBlocking::builder(connection)
+            .path(session_obj_path.to_owned())?
             .build()?;
         Ok(SessionInterface {
             proxy: session,
@@ -109,40 +104,3 @@ impl<'a> SessionInterface<'a> {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum SessionIdParseError {
-    NonEmptyString,
-}
-
-impl Display for SessionIdParseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Session Id must be a non-empty string")
-    }
-}
-
-impl Error for SessionIdParseError {}
-
-#[derive(Debug, Eq, PartialEq)]
-pub struct SessionId {
-    session_id: String,
-}
-
-impl FromStr for SessionId {
-    type Err = SessionIdParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.is_empty() {
-            Err(SessionIdParseError::NonEmptyString)
-        } else {
-            Ok(SessionId {
-                session_id: s.to_owned(),
-            })
-        }
-    }
-}
-
-impl Display for SessionId {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.session_id)
-    }
-}
